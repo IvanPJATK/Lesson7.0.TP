@@ -15,6 +15,12 @@ namespace TestPrep.Services
         public async Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id)
         {
             await using var connection = new SqlConnection(_connectionString);
+            const string sql =
+                """
+                    select rental_id, rental_date, return_date, status_id
+                    from Rental
+                    where customer_id = @id
+                """;
             return Ok();
         }
     }
