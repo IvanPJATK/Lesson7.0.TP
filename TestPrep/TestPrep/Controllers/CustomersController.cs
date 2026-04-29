@@ -8,21 +8,21 @@ namespace TestPrep.Controllers
     public class CustomersController : ControllerBase
     {
         private readonly IRentalService _rentalService;
-        CustomersController(IRentalService rentalservice) 
+        public CustomersController(IRentalService rentalservice) 
         {
             _rentalService = rentalservice;
         }
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetCustomerRentals(int id)
         {
-            var customer = _rentalService.GetCustomerRentalsAsync(id);
+            var customer = await _rentalService.GetCustomerRentalsAsync(id);
 
             if (customer == null)
             {
                 return NotFound();
             }
             
-            return Ok();
+            return Ok(customer);
         }
     }
 }
