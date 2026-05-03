@@ -13,6 +13,75 @@ namespace TestPrep.Services
             _connectionString = configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException();
         }
 
+        public async Task<RentalsDTO?> AddNewRentalAsync(int id, RentalsDTO rental)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            
+            const string customer_check_sql = """
+                                            select first_name 
+                                            from Customer
+                                            where customer_id = @id
+                """;
+            
+            await connection.OpenAsync();
+            await using var check_command = new SqlCommand(customer_check_sql, connection);
+            check_command.Parameters.AddWithValue("@id", id);
+            await using var check_reader = await check_command.ExecuteReaderAsync();
+            string firstName = null;
+            while (await check_reader.ReadAsync())
+            {
+                firstName = check_reader.GetString(check_reader.GetOrdinal("first_name"));
+            }
+            if (firstName == null) return null;
+            check_reader.Close();
+
+            var movies = rental.movies.Select(m => m.Title).ToList();
+            if(movies.Count == 0) return null;
+
+            var moviesToSqlParam = string.Join(",", movies.Select((_, i) => $"@m{i}"));
+            string movies_check_sql = $"select count(*) from Movie where title in ({moviesToSqlParam})";
+
+            await using var command = new SqlCommand(movies_check_sql, connection);
+            for (int i = 0; i < movies.Count; i++)
+            {
+                command.Parameters.AddWithValue($"@m{i}", movies[i]);
+            }
+
+            int existingcount = (int)await command.ExecuteScalarAsync();
+            if (existingcount != movies.Count) return null;
+
+            const string insert_rental_sql = """
+                SET IDENTITY_INSERT Rental ON;
+                                    insert into Rental (rental_id, rental_date, return_date, customer_id, status_id) 
+                                    values (@rental_id, @s_date, @e_date, @customer_id, (select status_id from status where name = @status))
+                
+                SET IDENTITY_INSERT Rental OFF;
+                """;
+
+            await using var insert_rental_command = new SqlCommand(insert_rental_sql, connection);
+            insert_rental_command.Parameters.AddWithValue("@rental_id", rental.Id);
+            insert_rental_command.Parameters.AddWithValue("@s_date", rental.RentalDate);
+            insert_rental_command.Parameters.AddWithValue("@e_date", (object?)rental.ReturnlDate ?? DBNull.Value);
+            insert_rental_command.Parameters.AddWithValue("@customer_id", id);
+            insert_rental_command.Parameters.AddWithValue("@status", rental.status.Length == 0 ? "Rented" : rental.status);
+            await insert_rental_command.ExecuteNonQueryAsync();
+
+            foreach ( var movie in rental.movies )
+            {
+                const string insert_rental_item_sql = """
+                                                    insert into Rental_Item (rental_id, movie_id, price_at_rental)
+                                                    select @rental_id, movie_id, price_per_day
+                                                    from Movie where title = @title
+                    """;
+                await using var insert_rental_item_command = new SqlCommand(insert_rental_item_sql, connection);
+                insert_rental_item_command.Parameters.AddWithValue("@rental_id", rental.Id);
+                insert_rental_item_command.Parameters.AddWithValue("@title", movie.Title);
+                await insert_rental_item_command.ExecuteNonQueryAsync();
+            }
+
+            return rental;
+        }
+
         public async Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id)
         {
             var rentalDict = new Dictionary<int, RentalsDTO>();
@@ -62,68 +131,5 @@ namespace TestPrep.Services
             return new CustomerRentalDTO
             { FirstName = firstName, LastName = lastName, Rentals = rentalDict.Values.ToList()};
         }
-
-        //public async Task<CustomerRentalDTO?> GetCustomerRentalsBrokenAsync(int id)
-        //{
-        //    await using var connection = new SqlConnection(_connectionString);
-        //    const string customer_sql =
-        //        """
-        //            select first_name, last_name
-        //            from Customer
-        //            where customer_id = @id
-        //        """;
-        //    await using var command = new SqlCommand(customer_sql, connection);
-        //    command.Parameters.AddWithValue("@id", id);
-        //    await connection.OpenAsync();
-        //    await using var reader = await command.ExecuteReaderAsync();
-        //    string FirstName = null;
-        //    string LastName = null;
-        //    if (await reader.ReadAsync())
-        //    {
-        //        FirstName = reader.GetString(reader.GetOrdinal("first_name"));
-        //        LastName = reader.GetString(reader.GetOrdinal("last_name"));
-        //    }
-        //    //Rentals and movies
-
-        //    const string rentalsSql =
-        //        """
-        //            select r.rental_id, r.rental_date, r.return_date, 
-        //            s.name as status_name,
-        //            m.movie_id, m.title, m.price_per_day
-        //            from Rental r
-        //            join Status s on r.status_id = s.status_id
-        //            join Rental_Item ri on r.rental_id = ri.rental_id
-        //            join Movie m on m.movie_id = ri.movie_id
-        //            where customer_id = @id
-        //        """;
-        //    await using var commandR = new SqlCommand(rentalsSql, connection);
-        //    commandR.Parameters.AddWithValue("@id", id);
-        //    await connection.OpenAsync();
-        //    await using var readerR = await command.ExecuteReaderAsync();
-        //    var rentalsWithMovies = new List<RentalsDTO>();
-        //    while(await readerR.ReadAsync())
-        //    {
-        //        var rental = new RentalsDTO
-        //        {
-        //            Id = readerR.GetInt32(readerR.GetOrdinal("rental_id")),
-        //            RentalDate = reader.GetDateTime(reader.GetOrdinal("rental_date")),
-        //            status = reader.GetString(reader.GetOrdinal("status_name")),
-        //            movies = new List<MoviesDTO>()
-        //        };
-        //        if (!rentalsWithMovies.Contains(rental))
-        //        {
-        //            rentalsWithMovies.Add(rental);
-        //        }
-        //        else
-        //        {
-        //            rental.movies.Add(new MoviesDTO
-        //            {
-        //                Title = readerR.GetString(readerR.GetOrdinal("title")),
-        //                PriceAtRental = readerR.GetDecimal(readerR.GetOrdinal("price_per_day"))
-        //            });
-        //        }
-        //    }
-        //    return new CustomerRentalDTO {FirstName = FirstName, LastName = LastName, Rentals = rentalsWithMovies};
-        //}
     }
 }

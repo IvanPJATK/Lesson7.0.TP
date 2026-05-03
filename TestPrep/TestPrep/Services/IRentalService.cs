@@ -5,5 +5,6 @@ namespace TestPrep.Services
     public interface IRentalService
     {
         Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id);
+        Task<RentalsDTO?> AddNewRentalAsync(int id, RentalsDTO rental);
     }
 }
