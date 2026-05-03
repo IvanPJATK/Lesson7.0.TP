@@ -16,41 +16,45 @@ namespace TestPrep.Services
         public async Task<RentalsDTO?> AddNewRentalAsync(int id, RentalsDTO rental)
         {
             await using var connection = new SqlConnection(_connectionString);
-            
-            const string customer_check_sql = """
+            await connection.OpenAsync();
+
+            await using var transaction = (SqlTransaction) await connection.BeginTransactionAsync();
+
+            try
+            {
+                const string customer_check_sql = """
                                             select first_name 
                                             from Customer
                                             where customer_id = @id
                 """;
-            
-            await connection.OpenAsync();
-            await using var check_command = new SqlCommand(customer_check_sql, connection);
-            check_command.Parameters.AddWithValue("@id", id);
-            await using var check_reader = await check_command.ExecuteReaderAsync();
-            string firstName = null;
-            while (await check_reader.ReadAsync())
-            {
-                firstName = check_reader.GetString(check_reader.GetOrdinal("first_name"));
-            }
-            if (firstName == null) return null;
-            check_reader.Close();
 
-            var movies = rental.movies.Select(m => m.Title).ToList();
-            if(movies.Count == 0) return null;
+                await using var check_command = new SqlCommand(customer_check_sql, connection);
+                check_command.Parameters.AddWithValue("@id", id);
+                await using var check_reader = await check_command.ExecuteReaderAsync();
+                string firstName = null;
+                while (await check_reader.ReadAsync())
+                {
+                    firstName = check_reader.GetString(check_reader.GetOrdinal("first_name"));
+                }
+                if (firstName == null) return null;
+                check_reader.Close();
 
-            var moviesToSqlParam = string.Join(",", movies.Select((_, i) => $"@m{i}"));
-            string movies_check_sql = $"select count(*) from Movie where title in ({moviesToSqlParam})";
+                var movies = rental.movies.Select(m => m.Title).ToList();
+                if (movies.Count == 0) return null;
 
-            await using var command = new SqlCommand(movies_check_sql, connection);
-            for (int i = 0; i < movies.Count; i++)
-            {
-                command.Parameters.AddWithValue($"@m{i}", movies[i]);
-            }
+                var moviesToSqlParam = string.Join(",", movies.Select((_, i) => $"@m{i}"));
+                string movies_check_sql = $"select count(*) from Movie where title in ({moviesToSqlParam})";
 
-            int existingcount = (int)await command.ExecuteScalarAsync();
-            if (existingcount != movies.Count) return null;
+                await using var command = new SqlCommand(movies_check_sql, connection);
+                for (int i = 0; i < movies.Count; i++)
+                {
+                    command.Parameters.AddWithValue($"@m{i}", movies[i]);
+                }
 
-            const string insert_rental_sql = """
+                int existingcount = (int)await command.ExecuteScalarAsync();
+                if (existingcount != movies.Count) return null;
+
+                const string insert_rental_sql = """
                 SET IDENTITY_INSERT Rental ON;
                                     insert into Rental (rental_id, rental_date, return_date, customer_id, status_id) 
                                     values (@rental_id, @s_date, @e_date, @customer_id, (select status_id from status where name = @status))
@@ -58,28 +62,35 @@ namespace TestPrep.Services
                 SET IDENTITY_INSERT Rental OFF;
                 """;
 
-            await using var insert_rental_command = new SqlCommand(insert_rental_sql, connection);
-            insert_rental_command.Parameters.AddWithValue("@rental_id", rental.Id);
-            insert_rental_command.Parameters.AddWithValue("@s_date", rental.RentalDate);
-            insert_rental_command.Parameters.AddWithValue("@e_date", (object?)rental.ReturnlDate ?? DBNull.Value);
-            insert_rental_command.Parameters.AddWithValue("@customer_id", id);
-            insert_rental_command.Parameters.AddWithValue("@status", rental.status.Length == 0 ? "Rented" : rental.status);
-            await insert_rental_command.ExecuteNonQueryAsync();
+                await using var insert_rental_command = new SqlCommand(insert_rental_sql, connection);
+                insert_rental_command.Parameters.AddWithValue("@rental_id", rental.Id);
+                insert_rental_command.Parameters.AddWithValue("@s_date", rental.RentalDate);
+                insert_rental_command.Parameters.AddWithValue("@e_date", (object?)rental.ReturnlDate ?? DBNull.Value);
+                insert_rental_command.Parameters.AddWithValue("@customer_id", id);
+                insert_rental_command.Parameters.AddWithValue("@status", rental.status.Length == 0 ? "Rented" : rental.status);
+                await insert_rental_command.ExecuteNonQueryAsync();
 
-            foreach ( var movie in rental.movies )
-            {
-                const string insert_rental_item_sql = """
+                foreach (var movie in rental.movies)
+                {
+                    const string insert_rental_item_sql = """
                                                     insert into Rental_Item (rental_id, movie_id, price_at_rental)
                                                     select @rental_id, movie_id, price_per_day
                                                     from Movie where title = @title
                     """;
-                await using var insert_rental_item_command = new SqlCommand(insert_rental_item_sql, connection);
-                insert_rental_item_command.Parameters.AddWithValue("@rental_id", rental.Id);
-                insert_rental_item_command.Parameters.AddWithValue("@title", movie.Title);
-                await insert_rental_item_command.ExecuteNonQueryAsync();
+                    await using var insert_rental_item_command = new SqlCommand(insert_rental_item_sql, connection);
+                    insert_rental_item_command.Parameters.AddWithValue("@rental_id", rental.Id);
+                    insert_rental_item_command.Parameters.AddWithValue("@title", movie.Title);
+                    await insert_rental_item_command.ExecuteNonQueryAsync();
+                }
+                await transaction.CommitAsync();
+                return rental;
             }
-
-            return rental;
+            catch
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+            
         }
 
         public async Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id)
