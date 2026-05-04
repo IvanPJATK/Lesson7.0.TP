@@ -1,5 +1,6 @@
 ﻿using System.Data.SqlTypes;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using TestPrep.DTO;
 
@@ -8,7 +9,7 @@ namespace TestPrep.Services
     public class RentalService : IRentalService
     {
         private readonly string _connectionString;
-        public RentalService(IConfiguration configuration) 
+        public RentalService(IConfiguration configuration)
         {
             _connectionString = configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException();
         }
@@ -18,7 +19,7 @@ namespace TestPrep.Services
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            await using var transaction = (SqlTransaction) await connection.BeginTransactionAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
 
             try
             {
@@ -90,7 +91,41 @@ namespace TestPrep.Services
                 await transaction.RollbackAsync();
                 return null;
             }
-            
+
+        }
+
+        public async Task<CustomerDTO?> GetCustomerAsync(int id)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string selectSql = """
+                                    select first_name, last_name from Customer where customer_id = @id
+                """;
+            await using var command = new SqlCommand(selectSql, connection);
+            command.Parameters.AddWithValue("@id", id);
+
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string first_name = null;
+                first_name = reader.GetString(reader.GetOrdinal("first_name"));
+                if (first_name == null)
+                {
+                    return null;
+                }
+                string last_name = reader.GetString(reader.GetOrdinal("last_name"));
+                CustomerDTO customer = new CustomerDTO
+                {
+                    First_Name = first_name,
+                    Last_Name = last_name,
+                    Id = id
+                };
+                return customer;
+            }
+
+            return null;
         }
 
         public async Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id)

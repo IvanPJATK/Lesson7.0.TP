@@ -6,5 +6,7 @@ namespace TestPrep.Services
     {
         Task<CustomerRentalDTO?> GetCustomerRentalsAsync(int id);
         Task<RentalsDTO?> AddNewRentalAsync(int id, RentalsDTO rental);
+
+        Task<CustomerDTO?> GetCustomerAsync(int id);
     }
 }

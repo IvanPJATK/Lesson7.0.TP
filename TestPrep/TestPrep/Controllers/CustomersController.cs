@@ -13,7 +13,14 @@ namespace TestPrep.Controllers
         {
             _rentalService = rentalservice;
         }
-        [HttpGet("{id:int}/rentals")]
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> getCustomer(int id)
+        {
+            var customer = await _rentalService.GetCustomerAsync(id);
+            if(customer == null) { return BadRequest(id); }
+            return Ok(customer);
+        }
+        [HttpGet("{id:int}/rentals")] 
         public async Task<IActionResult> GetCustomerRentals(int id)
         {
             var customer = await _rentalService.GetCustomerRentalsAsync(id);
