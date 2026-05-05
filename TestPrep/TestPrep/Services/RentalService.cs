@@ -29,7 +29,7 @@ namespace TestPrep.Services
                                             where customer_id = @id
                 """;
 
-                await using var check_command = new SqlCommand(customer_check_sql, connection);
+                await using var check_command = new SqlCommand(customer_check_sql, connection, transaction);
                 check_command.Parameters.AddWithValue("@id", id);
                 await using var check_reader = await check_command.ExecuteReaderAsync();
                 string firstName = null;
@@ -46,7 +46,7 @@ namespace TestPrep.Services
                 var moviesToSqlParam = string.Join(",", movies.Select((_, i) => $"@m{i}"));
                 string movies_check_sql = $"select count(*) from Movie where title in ({moviesToSqlParam})";
 
-                await using var command = new SqlCommand(movies_check_sql, connection);
+                await using var command = new SqlCommand(movies_check_sql, connection, transaction);
                 for (int i = 0; i < movies.Count; i++)
                 {
                     command.Parameters.AddWithValue($"@m{i}", movies[i]);
@@ -63,7 +63,7 @@ namespace TestPrep.Services
                 SET IDENTITY_INSERT Rental OFF;
                 """;
 
-                await using var insert_rental_command = new SqlCommand(insert_rental_sql, connection);
+                await using var insert_rental_command = new SqlCommand(insert_rental_sql, connection, transaction);
                 insert_rental_command.Parameters.AddWithValue("@rental_id", rental.Id);
                 insert_rental_command.Parameters.AddWithValue("@s_date", rental.RentalDate);
                 insert_rental_command.Parameters.AddWithValue("@e_date", (object?)rental.ReturnlDate ?? DBNull.Value);
@@ -78,7 +78,7 @@ namespace TestPrep.Services
                                                     select @rental_id, movie_id, price_per_day
                                                     from Movie where title = @title
                     """;
-                    await using var insert_rental_item_command = new SqlCommand(insert_rental_item_sql, connection);
+                    await using var insert_rental_item_command = new SqlCommand(insert_rental_item_sql, connection, transaction);
                     insert_rental_item_command.Parameters.AddWithValue("@rental_id", rental.Id);
                     insert_rental_item_command.Parameters.AddWithValue("@title", movie.Title);
                     await insert_rental_item_command.ExecuteNonQueryAsync();
